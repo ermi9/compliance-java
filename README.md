@@ -1,5 +1,5 @@
 # compliance-java
-OOP Compliance Screener
+Course Compliance Screener
 
 A static analysis tool that scans Java source files for course compliance and detects AI-favored banned syntax. Built as a proof of concept for automated pre-screening of student submissions on a certain course.
 
@@ -18,21 +18,25 @@ Python 3.8+. No external dependencies.
 
 Usage
 
-bash# Single file
+```bash
+# Single file
 python3 screener.py path/to/MyClass.java
 
 # Entire project folder
 python3 screener.py path/to/src/
+```
+## Demo files
+Three test cases are included in `/demo`:
 
-Demo files
+| File | Expected result |
+|------|----------------|
+| `CleanSubmission.java` | COMPLIANT — all OOP concepts present, no banned syntax |
+| `AiGeneratedSubmission.java` | NON-COMPLIANT — Record, Lambdas, Stream API, public fields |
+| `SwingBorderlineCase.java` | COMPLIANT — valid OOP via Swing UI classes |
 
-Three test cases are included in /demo:
-
-FileExpected resultCleanSubmission.javaCOMPLIANT — all OOP concepts present, no banned syntaxAiGeneratedSubmission.javaNON-COMPLIANT — Record, Lambdas, Stream API, public fieldsSwingBorderlineCase.javaCOMPLIANT — valid OOP via Swing UI classes
-
-Current limitations
-
-
-Regex-based parser, not a true AST. Next version migrates to JavaParser for node-level precision.
-Rules are hardcoded. Production version will load from a configurable YAML ruleset.
-Single-language only (Java).
+## Current limitations
+- Regex-based parser, not a true AST. Next version migrates to JavaParser for node-level precision.
+- Rules are hardcoded. Production version will load from a configurable YAML ruleset.
+- Single-language only (Java).
+## Status
+Proof of concept.
