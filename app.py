@@ -228,3 +228,233 @@ def extract_metrics(parsed: dict) -> dict:
         "max_inheritance_depth": max_depth,
         "has_exception_handling": has_exception_handling,
         "has_lambda": has_lambda,
+        "has_streams": has_streams,
+        "has_records": has_records,
+        "banned_syntax": banned_syntax,
+    }
+
+
+def build_zss_tree(parsed: dict) -> Node:
+    root = Node("Project")
+
+    def javalang_to_zss(node):
+        if not isinstance(node, javalang.ast.Node):
+            return None
+        zss_node = Node(type(node).__name__)
+        for child in node.children:
+            if isinstance(child, javalang.ast.Node):
+                kid = javalang_to_zss(child)
+                if kid:
+                    zss_node.addkid(kid)
+            elif isinstance(child, list):
+                for item in child:
+                    if isinstance(item, javalang.ast.Node):
+                        kid = javalang_to_zss(item)
+                        if kid:
+                            zss_node.addkid(kid)
+        return zss_node
+
+    for file_info in parsed.get("files", []):
+        file_node = Node("File")
+        kid = javalang_to_zss(file_info["tree"])
+        if kid:
+            file_node.addkid(kid)
+        root.addkid(file_node)
+
+    return root
+
+
+def count_nodes(zss_node: Node) -> int:
+    if zss_node is None:
+        return 0
+    total = 0
+    stack = [zss_node]
+    while stack:
+        n = stack.pop()
+        total += 1
+        stack.extend(Node.get_children(n))
+    return total
+
+
+# ── Layer 1 ───────────────────────────────────────────────────────────────────
+
+def layer1_static(metrics: dict, profile: dict) -> dict:
+    passed = []
+    failed = []
+    warnings = []
+
+    # banned syntax — only fail on items the professor explicitly banned
+    banned_list = [b.lower() for b in profile.get("banned", [])]
+    actually_banned = []
+    for item in metrics["banned_syntax"]:
+        t = item["type"]
+        if t in banned_list or any(t in b for b in banned_list):
+            actually_banned.append(item["description"])
+    if actually_banned:
+        failed.append(f"check_banned_syntax: Found banned syntax — {', '.join(actually_banned)}")
+    else:
+        note = f" ({', '.join(b['description'] for b in metrics['banned_syntax'])} detected but not banned by guidelines)" if metrics["banned_syntax"] else ""
+        passed.append(f"check_banned_syntax: No professor-banned syntax found{note}")
+
+    # java only (always pass at this point)
+    passed.append("check_java_only: Only Java files processed")
+
+    # minimum classes
+    min_classes = profile.get("minimum_classes", 1)
+    if metrics["class_count"] < min_classes:
+        failed.append(
+            f"check_classes: Only {metrics['class_count']} class(es) found, need {min_classes}"
+        )
+    else:
+        passed.append(f"check_classes: {metrics['class_count']} class(es) found (min {min_classes})")
+
+    # inheritance
+    if profile.get("inheritance_required") and metrics["inheritance_count"] == 0:
+        failed.append("check_inheritance: Inheritance required but none found")
+    else:
+        passed.append(f"check_inheritance: {metrics['inheritance_count']} inheritance relationship(s)")
+
+    # interfaces
+    min_ifaces = profile.get("minimum_interfaces", 1)
+    if profile.get("interfaces_required") and metrics["interface_count"] < min_ifaces:
+        failed.append(
+            f"check_interfaces: {metrics['interface_count']} interface(s) found, need {min_ifaces}"
+        )
+    else:
+        passed.append(f"check_interfaces: {metrics['interface_count']} interface(s) found")
+
+    # overriding
+    if profile.get("override_required") and metrics["override_count"] == 0:
+        failed.append("check_overriding: Method overriding required but @Override not found")
+    else:
+        passed.append(f"check_overriding: {metrics['override_count']} override(s) found")
+
+    # encapsulation
+    if profile.get("private_fields_required") and metrics["private_field_count"] == 0:
+        failed.append("check_encapsulation: Private fields required but none found")
+    else:
+        passed.append(f"check_encapsulation: {metrics['private_field_count']} private field(s)")
+
+    # generics
+    if profile.get("generics_required") and (
+        metrics["generic_class_count"] == 0 and metrics["generic_method_count"] == 0
+    ):
+        failed.append("check_generics: Generics required but none found")
+    else:
+        passed.append(
+            f"check_generics: {metrics['generic_class_count']} generic class(es), "
+            f"{metrics['generic_method_count']} generic method(s)"
+        )
+
+    # exception handling
+    if profile.get("exception_handling_required") and not metrics["has_exception_handling"]:
+        failed.append("check_exception_handling: Exception handling required but no try block found")
+    else:
+        passed.append(
+            f"check_exception_handling: Exception handling "
+            + ("present" if metrics["has_exception_handling"] else "not present")
+        )
+
+    # complexity warning
+    if metrics["class_count"] < 5:
+        warnings.append(
+            "check_complexity: Low class count may indicate insufficient complexity for this assignment"
+        )
+
+    summary_keys = [
+        "class_count", "interface_count", "method_count", "field_count",
+        "inheritance_count", "override_count", "private_field_count",
+        "generic_class_count", "abstract_class_count",
+    ]
+
+    return {
+        "verdict": "FAIL" if failed else "PASS",
+        "passed_checks": passed,
+        "failed_checks": failed,
+        "warnings": warnings,
+        "banned_syntax_found": metrics["banned_syntax"],
+        "metrics_summary": {k: metrics[k] for k in summary_keys},
+    }
+
+
+# ── Layer 2 ───────────────────────────────────────────────────────────────────
+
+def layer2_distance(
+    student_zss: Node,
+    ref_zss: Node,
+    student_node_count: int,
+    ref_node_count: int,
+) -> dict:
+    if student_node_count > ZSS_NODE_LIMIT or ref_node_count > ZSS_NODE_LIMIT:
+        return {
+            "verdict": "PASS",
+            "confidence": "LOW",
+            "raw_distance": -1,
+            "normalized_distance": -1,
+            "similarity_percent": -1,
+            "ref_node_count": ref_node_count,
+            "student_node_count": student_node_count,
+            "interpretation": f"Project too large for tree edit distance ({max(student_node_count, ref_node_count)} nodes); escalating to semantic evaluation.",
+        }
+    try:
+        raw = simple_distance(ref_zss, student_zss)
+    except Exception as e:
+        return {
+            "verdict": "PASS",
+            "confidence": "LOW",
+            "raw_distance": -1,
+            "normalized_distance": -1,
+            "similarity_percent": -1,
+            "ref_node_count": ref_node_count,
+            "student_node_count": student_node_count,
+            "interpretation": f"Tree distance computation failed ({e}); escalating to semantic evaluation.",
+        }
+    denom = max(ref_node_count, student_node_count)
+    normalized = raw / denom if denom else 0.0
+    similarity_pct = max(0.0, (1 - normalized) * 100)
+
+    if normalized <= 0.40:
+        verdict, confidence = "PASS", "HIGH"
+    elif normalized <= 0.65:
+        verdict, confidence = "PASS", "LOW"
+    elif normalized <= 0.80:
+        verdict, confidence = "FAIL", "LOW"
+    else:
+        verdict, confidence = "FAIL", "HIGH"
+
+    if similarity_pct >= 75:
+        interpretation = "Student structure closely mirrors the reference solution."
+    elif similarity_pct >= 50:
+        interpretation = "Student structure partially resembles the reference; some divergence."
+    elif similarity_pct >= 25:
+        interpretation = "Significant structural differences from the reference solution."
+    else:
+        interpretation = "Student structure is very far from the reference solution."
+
+    return {
+        "verdict": verdict,
+        "confidence": confidence,
+        "raw_distance": float(raw),
+        "normalized_distance": float(normalized),
+        "similarity_percent": float(similarity_pct),
+        "ref_node_count": ref_node_count,
+        "student_node_count": student_node_count,
+        "interpretation": interpretation,
+    }
+
+
+# ── Layer 3 ───────────────────────────────────────────────────────────────────
+
+def _llm_call(system_prompt: str, user_prompt: str) -> str:
+    from google import genai
+    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=f"{system_prompt}\n\n{user_prompt}",
+    )
+    return response.text
+
+
+def layer3_semantic(
+    student_metrics: dict,
+    ref_metrics: dict,
