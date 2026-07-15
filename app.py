@@ -458,3 +458,233 @@ def _llm_call(system_prompt: str, user_prompt: str) -> str:
 def layer3_semantic(
     student_metrics: dict,
     ref_metrics: dict,
+    guidelines: str,
+    all_source: str,
+) -> dict:
+    truncated = False
+    if len(all_source) > 6000:
+        all_source = all_source[:6000] + "\n...truncated for length"
+        truncated = True
+
+    def summary(m):
+        keys = [
+            "class_count", "interface_count", "method_count", "field_count",
+            "inheritance_count", "implementation_count", "override_count",
+            "private_field_count", "generic_class_count", "generic_method_count",
+            "abstract_class_count", "max_inheritance_depth",
+            "has_exception_handling", "has_lambda", "has_streams",
+        ]
+        return {k: m.get(k) for k in keys}
+
+    ref_s = summary(ref_metrics)
+    stu_s = summary(student_metrics)
+
+    diff = {}
+    for key in ref_s:
+        rv = ref_s[key]
+        sv = stu_s[key]
+        if isinstance(rv, bool):
+            diff[key] = {"ref": rv, "student": sv, "match": rv == sv}
+        elif isinstance(rv, (int, float)):
+            diff[key] = {"ref": rv, "student": sv, "delta": (sv or 0) - (rv or 0)}
+
+    system_prompt = (
+        "You are a strict but fair Java OOP compliance evaluator for a university course "
+        "at University of Messina. You evaluate whether student code meaningfully implements "
+        "OOP concepts, not just syntactically. Respond ONLY with valid JSON. No markdown. No preamble."
+    )
+
+    user_prompt = f"""PROFESSOR GUIDELINES:
+{guidelines}
+
+REFERENCE PROJECT METRICS (what a good solution looks like):
+{json.dumps(ref_s, indent=2)}
+
+STUDENT PROJECT METRICS:
+{json.dumps(stu_s, indent=2)}
+
+STRUCTURAL DIFF:
+{json.dumps(diff, indent=2)}
+
+STUDENT SOURCE CODE (sample):
+{all_source}
+
+Evaluate and return exactly this JSON:
+{{
+  "semantic_verdict": "PASS" or "FAIL",
+  "confidence": "HIGH", "MEDIUM", or "LOW",
+  "oop_concepts": {{
+    "encapsulation": {{"present": bool, "meaningful": bool, "comment": "one sentence"}},
+    "inheritance": {{"present": bool, "meaningful": bool, "comment": "one sentence"}},
+    "polymorphism": {{"overloading": bool, "overriding": bool, "parametric": bool, "coercion": bool, "comment": "one sentence"}},
+    "abstraction": {{"present": bool, "meaningful": bool, "comment": "one sentence"}},
+    "subtyping": {{"present": bool, "meaningful": bool, "comment": "one sentence"}},
+    "exception_handling": {{"present": bool, "meaningful": bool, "comment": "one sentence"}},
+    "extensibility": {{"present": bool, "comment": "one sentence"}}
+  }},
+  "vibe_coding_signals": ["list any signals suggesting LLM generation"],
+  "complexity_assessment": "one sentence on overall richness",
+  "professor_summary": "2-3 sentences for professor",
+  "student_feedback": "2-3 sentences explaining issues directly to student, constructive tone"
+}}"""
+
+    for attempt in range(2):
+        try:
+            raw = _llm_call(system_prompt, user_prompt)
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return {"error": "LLM response invalid", "raw": raw}
+        except Exception:
+            if attempt == 0:
+                time.sleep(2)
+            else:
+                return {"error": "LLM unavailable"}
+
+    return {"error": "LLM unavailable"}
+
+
+def _generate_profile(guidelines: str) -> dict:
+    system_prompt = "You are a course requirements extractor. Respond ONLY with valid JSON. No markdown."
+    user_prompt = f"""Extract a structural compliance profile from these course guidelines. Return ONLY valid JSON, no markdown:
+{{
+  "minimum_classes": int,
+  "minimum_interfaces": int,
+  "inheritance_required": bool,
+  "interfaces_required": bool,
+  "override_required": bool,
+  "private_fields_required": bool,
+  "generics_required": bool,
+  "exception_handling_required": bool,
+  "banned": ["lambdas", "streams", "records"],
+  "notes": "one sentence summary of key requirements"
+}}
+
+Guidelines:
+{guidelines}"""
+
+    for attempt in range(2):
+        try:
+            raw = _llm_call(system_prompt, user_prompt)
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return {"error": "Profile generation failed", "raw": raw}
+        except Exception:
+            if attempt == 0:
+                time.sleep(2)
+            else:
+                return {"error": "LLM unavailable for profile generation"}
+
+    return {"error": "LLM unavailable"}
+
+
+# ── Final verdict ─────────────────────────────────────────────────────────────
+
+def compute_final_verdict(l1: dict, l2, l3) -> dict:
+    if l1["verdict"] == "FAIL":
+        return {
+            "final_verdict": "NON_COMPLIANT",
+            "reason": "Failed static analysis",
+            "layers_run": ["layer1"],
+            "can_appeal": False,
+        }
+
+    if l2 and l2["verdict"] == "FAIL" and l2["confidence"] == "HIGH":
+        return {
+            "final_verdict": "NON_COMPLIANT",
+            "reason": "Structural distance too high from reference solution",
+            "layers_run": ["layer1", "layer2"],
+            "can_appeal": False,
+        }
+
+    if l2 and l2["verdict"] == "FAIL" and l2["confidence"] == "LOW":
+        if l3 is None or l3.get("error"):
+            return {
+                "final_verdict": "NEEDS_REVIEW",
+                "reason": "Borderline structural distance, requires professor review",
+                "layers_run": ["layer1", "layer2", "layer3"],
+                "can_appeal": True,
+            }
+
+    if l3 is None:
+        return {
+            "final_verdict": "NEEDS_REVIEW",
+            "reason": "LLM evaluation unavailable",
+            "layers_run": ["layer1", "layer2"],
+            "can_appeal": True,
+        }
+
+    if l3.get("error"):
+        return {
+            "final_verdict": "NEEDS_REVIEW",
+            "reason": "Semantic evaluation failed",
+            "layers_run": ["layer1", "layer2"],
+            "can_appeal": True,
+        }
+
+    if l3.get("semantic_verdict") == "FAIL":
+        return {
+            "final_verdict": "NON_COMPLIANT",
+            "reason": "OOP concepts not meaningfully implemented",
+            "layers_run": ["layer1", "layer2", "layer3"],
+            "can_appeal": True,
+        }
+
+    if l3.get("confidence") in ["LOW", "MEDIUM"]:
+        return {
+            "final_verdict": "NEEDS_REVIEW",
+            "reason": "Low semantic confidence, professor should verify",
+            "layers_run": ["layer1", "layer2", "layer3"],
+            "can_appeal": True,
+        }
+
+    return {
+        "final_verdict": "COMPLIANT",
+        "reason": "Passed all three layers",
+        "layers_run": ["layer1", "layer2", "layer3"],
+        "can_appeal": False,
+    }
+
+
+# ── Submission processing helper ──────────────────────────────────────────────
+
+def _process_submission(zip_file, student_name: str) -> dict:
+    t0 = time.time()
+
+    parsed = parse_zip_to_ast(zip_file)
+    if "error" in parsed:
+        return {"error": parsed["error"], "parse_errors": parsed.get("parse_errors", [])}
+
+    metrics = extract_metrics(parsed)
+    zss_tree = build_zss_tree(parsed)
+    node_count = count_nodes(zss_tree)
+
+    l1 = layer1_static(metrics, reference["profile"])
+    l2 = None
+    l3 = None
+
+    if l1["verdict"] == "PASS":
+        l2 = layer2_distance(
+            zss_tree,
+            reference["zss_tree"],
+            node_count,
+            reference["node_count"],
+        )
+        if l2["verdict"] == "PASS" or l2["confidence"] == "LOW":
+            l3 = layer3_semantic(
+                metrics,
+                reference["metrics"],
+                reference["guidelines"],
+                parsed["all_source"],
+            )
+
+    final = compute_final_verdict(l1, l2, l3)
+
+    elapsed_ms = int((time.time() - t0) * 1000)
+    result_id = len(results) + 1
+
+    record = {
+        "id": result_id,
+        "student": student_name,
+        "submitted_at": time.time(),
+        "files_parsed": len(parsed["files"]),
+        "parse_errors": parsed["parse_errors"],
