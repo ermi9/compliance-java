@@ -688,3 +688,233 @@ def _process_submission(zip_file, student_name: str) -> dict:
         "submitted_at": time.time(),
         "files_parsed": len(parsed["files"]),
         "parse_errors": parsed["parse_errors"],
+        "layer1": l1,
+        "layer2": l2,
+        "layer3": l3,
+        "final": final,
+        "processing_time_ms": elapsed_ms,
+    }
+    results.append(record)
+    return record
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@app.route("/setup", methods=["POST"])
+def setup():
+    if "reference_zip" not in request.files:
+        return jsonify({"error": "No reference_zip file provided"}), 400
+    guidelines = request.form.get("guidelines", "")
+
+    parsed = parse_zip_to_ast(request.files["reference_zip"])
+    if "error" in parsed:
+        return jsonify({"error": parsed["error"]}), 400
+
+    metrics = extract_metrics(parsed)
+    zss_tree = build_zss_tree(parsed)
+    node_count = count_nodes(zss_tree)
+    profile = _generate_profile(guidelines)
+
+    reference["zss_tree"] = zss_tree
+    reference["node_count"] = node_count
+    reference["metrics"] = metrics
+    reference["guidelines"] = guidelines
+    reference["profile"] = profile
+    reference["uploaded_at"] = time.time()
+
+    safe_metrics = {
+        k: v for k, v in metrics.items()
+        if not isinstance(v, list) or k in ("banned_syntax",)
+    }
+    # remove large lists
+    for k in ("classes", "interfaces", "methods", "fields"):
+        safe_metrics.pop(k, None)
+
+    return jsonify({
+        "status": "reference stored",
+        "files_parsed": len(parsed["files"]),
+        "parse_errors": parsed["parse_errors"],
+        "metrics": safe_metrics,
+        "profile": profile,
+        "message": "System ready to evaluate submissions",
+    })
+
+
+@app.route("/submit", methods=["POST"])
+def submit():
+    if not reference["zss_tree"]:
+        return jsonify({"error": "No reference solution uploaded. Call /setup first"}), 400
+    if "submission_zip" not in request.files:
+        return jsonify({"error": "No submission_zip file provided"}), 400
+
+    student_name = request.form.get("student_name", "Unknown")
+    record = _process_submission(request.files["submission_zip"], student_name)
+
+    if "error" in record:
+        return jsonify(record), 400
+    return jsonify(record)
+
+
+@app.route("/submit/batch", methods=["POST"])
+def submit_batch():
+    if not reference["zss_tree"]:
+        return jsonify({"error": "No reference solution uploaded. Call /setup first"}), 400
+
+    files = request.files.getlist("submission_zips")
+    if not files:
+        return jsonify({"error": "No files provided"}), 400
+
+    batch_results = []
+    total_ms = 0
+
+    for f in files:
+        student_name = os.path.splitext(f.filename)[0] if f.filename else "Unknown"
+        record = _process_submission(f, student_name)
+        batch_results.append(record)
+        if "processing_time_ms" in record:
+            total_ms += record["processing_time_ms"]
+
+    compliant = sum(1 for r in batch_results if r.get("final", {}).get("final_verdict") == "COMPLIANT")
+    non_compliant = sum(1 for r in batch_results if r.get("final", {}).get("final_verdict") == "NON_COMPLIANT")
+    needs_review = sum(1 for r in batch_results if r.get("final", {}).get("final_verdict") == "NEEDS_REVIEW")
+
+    l1_failures = sum(1 for r in batch_results if r.get("layer1", {}).get("verdict") == "FAIL")
+    l2_failures = sum(1 for r in batch_results if r.get("layer2") and r["layer2"].get("verdict") == "FAIL")
+    l3_failures = sum(
+        1 for r in batch_results
+        if r.get("layer3") and not r["layer3"].get("error") and r["layer3"].get("semantic_verdict") == "FAIL"
+    )
+
+    sims = [r["layer2"]["similarity_percent"] for r in batch_results if r.get("layer2")]
+    avg_sim = sum(sims) / len(sims) if sims else 0.0
+
+    return jsonify({
+        "results": batch_results,
+        "summary": {
+            "total": len(batch_results),
+            "compliant": compliant,
+            "non_compliant": non_compliant,
+            "needs_review": needs_review,
+            "layer1_failures": l1_failures,
+            "layer2_failures": l2_failures,
+            "layer3_failures": l3_failures,
+            "average_similarity_percent": round(avg_sim, 1),
+            "processing_time_total_ms": total_ms,
+        },
+    })
+
+
+VERDICT_ORDER = {"NON_COMPLIANT": 0, "NEEDS_REVIEW": 1, "COMPLIANT": 2}
+
+
+@app.route("/results", methods=["GET"])
+def get_results():
+    sorted_results = sorted(
+        results,
+        key=lambda r: VERDICT_ORDER.get(r.get("final", {}).get("final_verdict", ""), 99),
+    )
+    return jsonify(sorted_results)
+
+
+@app.route("/reference", methods=["GET"])
+def get_reference():
+    if not reference["zss_tree"]:
+        return jsonify({"status": "no reference set"})
+    safe = {k: v for k, v in reference.items() if k != "zss_tree"}
+    safe_metrics = {
+        k: v for k, v in safe.get("metrics", {}).items()
+        if k not in ("classes", "interfaces", "methods", "fields")
+    }
+    return jsonify({
+        "status": "reference set",
+        "node_count": safe["node_count"],
+        "guidelines": safe["guidelines"],
+        "profile": safe["profile"],
+        "uploaded_at": safe["uploaded_at"],
+        "metrics": safe_metrics,
+    })
+
+
+@app.route("/reset", methods=["DELETE"])
+def reset():
+    reference["zss_tree"] = None
+    reference["node_count"] = 0
+    reference["metrics"] = {}
+    reference["guidelines"] = ""
+    reference["profile"] = {}
+    reference["uploaded_at"] = None
+    results.clear()
+    return jsonify({"status": "reset complete"})
+
+
+# ── Frontend ──────────────────────────────────────────────────────────────────
+
+HTML = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>OOP Compliance Screener</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f1117;color:#e2e8f0;font-family:system-ui,sans-serif;min-height:100vh}
+.header{background:#1a1d2e;border-bottom:1px solid #2d3155;padding:1.2rem 2rem;display:flex;align-items:center;gap:1rem}
+.header h1{font-size:1.4rem;color:#fff}
+.header span{color:#6c63ff;font-weight:700}
+.badge-small{background:#6c63ff22;color:#6c63ff;border:1px solid #6c63ff44;border-radius:6px;padding:2px 8px;font-size:.75rem}
+.container{max-width:1200px;margin:0 auto;padding:2rem}
+.card{background:#1a1d2e;border:1px solid #2d3155;border-radius:12px;padding:1.5rem;margin-bottom:1.5rem}
+.card h2{font-size:1.1rem;margin-bottom:1rem;color:#a5b4fc}
+.section-title{color:#6c63ff;font-size:.8rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}
+label{display:block;color:#94a3b8;font-size:.85rem;margin-bottom:.4rem}
+input[type=text],textarea,input[type=file]{width:100%;background:#0f1117;border:1px solid #2d3155;border-radius:8px;padding:.6rem .8rem;color:#e2e8f0;font-size:.9rem;outline:none}
+input[type=text]:focus,textarea:focus{border-color:#6c63ff}
+textarea{resize:vertical;font-family:monospace}
+.btn{display:inline-flex;align-items:center;gap:.4rem;background:#6c63ff;color:#fff;border:none;border-radius:8px;padding:.6rem 1.2rem;font-size:.9rem;cursor:pointer;transition:background .15s}
+.btn:hover{background:#7c73ff}
+.btn:disabled{background:#3d3560;cursor:not-allowed}
+.btn-outline{background:transparent;border:1px solid #6c63ff;color:#6c63ff}
+.btn-outline:hover{background:#6c63ff22}
+.tabs{display:flex;gap:.5rem;margin-bottom:1rem;border-bottom:1px solid #2d3155;padding-bottom:.5rem}
+.tab{background:none;border:none;color:#94a3b8;padding:.5rem 1rem;cursor:pointer;border-radius:8px 8px 0 0;font-size:.9rem}
+.tab.active{color:#a5b4fc;background:#6c63ff22;border-bottom:2px solid #6c63ff}
+.tab-panel{display:none}.tab-panel.active{display:block}
+.row{display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:1rem}
+.progress-wrap{background:#0f1117;border-radius:8px;height:8px;overflow:hidden;margin:1rem 0}
+.progress-bar{background:#6c63ff;height:100%;transition:width .3s}
+.results-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.results-table th{color:#64748b;font-weight:500;text-align:left;padding:.6rem .8rem;border-bottom:1px solid #2d3155}
+.results-table td{padding:.6rem .8rem;border-bottom:1px solid #1e2235;vertical-align:middle}
+.results-table tr:hover td{background:#1e2235;cursor:pointer}
+.badge{display:inline-block;border-radius:6px;padding:2px 10px;font-size:.78rem;font-weight:600}
+.COMPLIANT{background:#22c55e22;color:#22c55e;border:1px solid #22c55e44}
+.NON_COMPLIANT{background:#ef444422;color:#ef4444;border:1px solid #ef444444}
+.NEEDS_REVIEW{background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44}
+.l-pass{color:#22c55e;font-weight:600}
+.l-fail{color:#ef4444;font-weight:600}
+.l-skip{color:#64748b}
+.sim-bar-wrap{display:flex;align-items:center;gap:.5rem;min-width:120px}
+.sim-bar{height:6px;border-radius:3px;flex:1}
+.sim-high{background:#22c55e}.sim-mid{background:#f59e0b}.sim-low{background:#ef4444}
+.sim-num{font-size:.8rem;min-width:36px;text-align:right}
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:#0008;z-index:100;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:#1a1d2e;border:1px solid #2d3155;border-radius:14px;width:min(860px,96vw);max-height:90vh;overflow-y:auto;padding:2rem;position:relative}
+.modal-close{position:absolute;top:1rem;right:1rem;background:none;border:none;color:#64748b;font-size:1.4rem;cursor:pointer}
+.modal-close:hover{color:#fff}
+.modal h3{color:#a5b4fc;margin-bottom:1rem;font-size:1.1rem}
+.layer-block{margin-bottom:1.5rem}
+.layer-block h4{color:#6c63ff;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.7rem}
+.check-list{list-style:none;font-size:.85rem}
+.check-list li{padding:.25rem 0;display:flex;gap:.5rem;align-items:flex-start}
+.check-pass::before{content:"✓";color:#22c55e;flex-shrink:0}
+.check-fail::before{content:"✗";color:#ef4444;flex-shrink:0}
+.check-warn::before{content:"⚠";color:#f59e0b;flex-shrink:0}
+.oop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.8rem}
+.oop-card{background:#0f1117;border:1px solid #2d3155;border-radius:8px;padding:.8rem}
+.oop-card h5{color:#94a3b8;font-size:.8rem;margin-bottom:.4rem;text-transform:capitalize}
+.oop-card .flags{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.3rem}
+.flag{font-size:.7rem;padding:1px 6px;border-radius:4px}
+.flag-yes{background:#22c55e22;color:#22c55e}
