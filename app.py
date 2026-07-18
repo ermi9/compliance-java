@@ -918,3 +918,233 @@ textarea{resize:vertical;font-family:monospace}
 .oop-card .flags{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.3rem}
 .flag{font-size:.7rem;padding:1px 6px;border-radius:4px}
 .flag-yes{background:#22c55e22;color:#22c55e}
+.flag-no{background:#ef444422;color:#ef4444}
+.oop-card .comment{color:#64748b;font-size:.75rem;line-height:1.4}
+.textbox{background:#0f1117;border:1px solid #2d3155;border-radius:8px;padding:.8rem;font-size:.85rem;color:#94a3b8;line-height:1.6}
+.textbox h5{color:#a5b4fc;margin-bottom:.5rem;font-size:.85rem}
+.info-row{display:flex;gap:2rem;flex-wrap:wrap;font-size:.85rem;margin-bottom:.8rem}
+.info-row span{color:#64748b}
+.info-row strong{color:#e2e8f0}
+.big-bar-wrap{background:#0f1117;border-radius:8px;height:14px;overflow:hidden;margin:.5rem 0 .3rem}
+.big-bar{height:100%;border-radius:8px;transition:width .5s}
+.ref-summary{background:#0f1117;border:1px solid #2d3155;border-radius:8px;padding:1rem;margin-top:1rem;font-size:.85rem}
+.ref-summary dl{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.4rem}
+.ref-summary dt{color:#64748b}
+.ref-summary dd{color:#e2e8f0;font-weight:500}
+.alert{border-radius:8px;padding:.8rem 1rem;font-size:.85rem;margin:.8rem 0}
+.alert-err{background:#ef444411;border:1px solid #ef444433;color:#ef4444}
+.alert-ok{background:#22c55e11;border:1px solid #22c55e33;color:#22c55e}
+.hidden{display:none}
+.vibe-list{font-size:.82rem;color:#f59e0b;list-style:disc;padding-left:1.2rem}
+.vibe-list li{margin:.2rem 0}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1><span>OOP</span> Compliance Screener</h1>
+  <span class="badge-small">POC · University of Messina</span>
+</div>
+<div class="container">
+
+  <!-- SETUP -->
+  <div class="card" id="setupSection">
+    <div class="section-title">Step 1 — Initialize System</div>
+    <h2>Professor Reference Upload</h2>
+    <div class="two-col">
+      <div>
+        <label>Professor Reference Solution (.zip)</label>
+        <input type="file" id="refZip" accept=".zip"/>
+      </div>
+      <div>
+        <label>Course Guidelines</label>
+        <textarea id="guidelines" rows="10" placeholder="Paste the full assignment guidelines here…"></textarea>
+      </div>
+    </div>
+    <button class="btn" style="margin-top:1rem" id="initBtn" onclick="initSystem()">Initialize System</button>
+    <div id="setupAlert"></div>
+    <div id="refSummary" class="ref-summary hidden"></div>
+  </div>
+
+  <!-- SUBMIT -->
+  <div class="card hidden" id="submitSection">
+    <div class="section-title">Step 2 — Student Submissions</div>
+    <h2>Submit for Evaluation</h2>
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('single',this)">Single Submission</button>
+      <button class="tab" onclick="switchTab('batch',this)">Batch Submission</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-single">
+      <div class="row">
+        <div style="flex:1"><label>Student Name</label><input type="text" id="studentName" placeholder="e.g. Mario Rossi"/></div>
+        <div style="flex:1"><label>Submission ZIP</label><input type="file" id="subZip" accept=".zip"/></div>
+        <button class="btn" onclick="submitSingle()">Submit</button>
+      </div>
+      <div id="singleAlert"></div>
+      <div id="singleResult"></div>
+    </div>
+
+    <div class="tab-panel" id="tab-batch">
+      <div class="row">
+        <div style="flex:1"><label>Student ZIPs (multiple)</label><input type="file" id="batchZips" accept=".zip" multiple/></div>
+        <button class="btn" onclick="submitBatch()">Submit All</button>
+      </div>
+      <div id="batchProgress" class="hidden">
+        <div class="progress-wrap"><div class="progress-bar" id="batchBar" style="width:0%"></div></div>
+        <div id="batchStatus" style="font-size:.85rem;color:#94a3b8;text-align:center"></div>
+      </div>
+      <div id="batchSummary"></div>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="card hidden" id="resultsSection">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <div><div class="section-title">Step 3 — Results</div><h2>Submission Results</h2></div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-outline" onclick="loadResults()">Refresh</button>
+        <button class="btn btn-outline" style="border-color:#ef4444;color:#ef4444" onclick="resetSystem()">Reset System</button>
+      </div>
+    </div>
+    <table class="results-table">
+      <thead><tr>
+        <th>#</th><th>Student</th><th>Files</th>
+        <th>L1</th><th>L2 Similarity</th><th>L3</th>
+        <th>Verdict</th><th>Time</th>
+      </tr></thead>
+      <tbody id="resultsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal" onclick="closeModal(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModalBtn()">✕</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<script>
+let currentDetail = null;
+
+async function initSystem(){
+  const zip = document.getElementById('refZip').files[0];
+  const guide = document.getElementById('guidelines').value.trim();
+  const alertEl = document.getElementById('setupAlert');
+  alertEl.innerHTML = '';
+  if(!zip){alertEl.innerHTML='<div class="alert alert-err">Please select a reference ZIP.</div>';return;}
+  if(!guide){alertEl.innerHTML='<div class="alert alert-err">Please enter course guidelines.</div>';return;}
+  const btn = document.getElementById('initBtn');
+  btn.disabled=true; btn.textContent='Initializing…';
+  const fd = new FormData();
+  fd.append('reference_zip', zip);
+  fd.append('guidelines', guide);
+  try{
+    const r = await fetch('/setup',{method:'POST',body:fd});
+    const d = await r.json();
+    if(!r.ok || d.error){
+      alertEl.innerHTML=`<div class="alert alert-err">${d.error||'Setup failed'}</div>`;
+      return;
+    }
+    alertEl.innerHTML='<div class="alert alert-ok">System initialized successfully.</div>';
+    showRefSummary(d);
+    document.getElementById('submitSection').classList.remove('hidden');
+    document.getElementById('resultsSection').classList.remove('hidden');
+    document.getElementById('setupSection').style.opacity='.6';
+  }catch(e){
+    alertEl.innerHTML=`<div class="alert alert-err">Network error: ${e.message}</div>`;
+  }finally{
+    btn.disabled=false; btn.textContent='Initialize System';
+  }
+}
+
+function showRefSummary(d){
+  const m = d.metrics; const p = d.profile;
+  const el = document.getElementById('refSummary');
+  el.innerHTML=`<strong style="color:#a5b4fc">Reference Metrics</strong>
+  <dl style="margin-top:.5rem">
+    <div><dt>Classes</dt><dd>${m.class_count}</dd></div>
+    <div><dt>Interfaces</dt><dd>${m.interface_count}</dd></div>
+    <div><dt>Methods</dt><dd>${m.method_count}</dd></div>
+    <div><dt>Fields</dt><dd>${m.field_count}</dd></div>
+    <div><dt>Inheritance</dt><dd>${m.inheritance_count}</dd></div>
+    <div><dt>Overrides</dt><dd>${m.override_count}</dd></div>
+    <div><dt>Private fields</dt><dd>${m.private_field_count}</dd></div>
+    <div><dt>Abstract classes</dt><dd>${m.abstract_class_count}</dd></div>
+  </dl>
+  <div style="margin-top:.7rem;color:#64748b;font-size:.8rem">Profile: ${p.notes||'—'} | Files parsed: ${d.files_parsed}</div>`;
+  el.classList.remove('hidden');
+}
+
+function switchTab(name, el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+}
+
+async function submitSingle(){
+  const name = document.getElementById('studentName').value.trim()||'Unknown';
+  const zip = document.getElementById('subZip').files[0];
+  const alertEl = document.getElementById('singleAlert');
+  alertEl.innerHTML='';
+  if(!zip){alertEl.innerHTML='<div class="alert alert-err">Please select a ZIP file.</div>';return;}
+  alertEl.innerHTML='<div class="alert" style="background:#6c63ff11;border:1px solid #6c63ff33;color:#a5b4fc">Evaluating…</div>';
+  const fd = new FormData();
+  fd.append('submission_zip', zip);
+  fd.append('student_name', name);
+  try{
+    const r = await fetch('/submit',{method:'POST',body:fd});
+    const d = await r.json();
+    if(!r.ok || d.error){alertEl.innerHTML=`<div class="alert alert-err">${d.error}</div>`;return;}
+    alertEl.innerHTML='';
+    document.getElementById('singleResult').innerHTML = renderResultCard(d);
+    loadResults();
+  }catch(e){
+    alertEl.innerHTML=`<div class="alert alert-err">Network error: ${e.message}</div>`;
+  }
+}
+
+async function submitBatch(){
+  const files = document.getElementById('batchZips').files;
+  if(!files.length){return;}
+  const prog = document.getElementById('batchProgress');
+  const bar = document.getElementById('batchBar');
+  const status = document.getElementById('batchStatus');
+  prog.classList.remove('hidden');
+  const allResults=[];
+  for(let i=0;i<files.length;i++){
+    status.textContent=`Processing ${i+1} of ${files.length}: ${files[i].name}`;
+    bar.style.width=((i/files.length)*100)+'%';
+    const fd=new FormData();
+    fd.append('submission_zip', files[i]);
+    fd.append('student_name', files[i].name.replace(/\.zip$/i,''));
+    const r = await fetch('/submit',{method:'POST',body:fd});
+    const d = await r.json();
+    allResults.push(d);
+  }
+  bar.style.width='100%';
+  status.textContent=`Done — ${files.length} submission(s) processed.`;
+  renderBatchSummary(allResults);
+  loadResults();
+}
+
+function renderBatchSummary(results){
+  const c=results.filter(r=>r.final?.final_verdict==='COMPLIANT').length;
+  const nc=results.filter(r=>r.final?.final_verdict==='NON_COMPLIANT').length;
+  const nr=results.filter(r=>r.final?.final_verdict==='NEEDS_REVIEW').length;
+  document.getElementById('batchSummary').innerHTML=`
+  <div style="display:flex;gap:1rem;margin-top:1rem;flex-wrap:wrap">
+    <div class="card" style="flex:1;min-width:130px;text-align:center;padding:1rem">
+      <div style="font-size:1.8rem;font-weight:700;color:#22c55e">${c}</div>
+      <div style="color:#64748b;font-size:.8rem">COMPLIANT</div>
+    </div>
+    <div class="card" style="flex:1;min-width:130px;text-align:center;padding:1rem">
+      <div style="font-size:1.8rem;font-weight:700;color:#ef4444">${nc}</div>
+      <div style="color:#64748b;font-size:.8rem">NON_COMPLIANT</div>
+    </div>
+    <div class="card" style="flex:1;min-width:130px;text-align:center;padding:1rem">
+      <div style="font-size:1.8rem;font-weight:700;color:#f59e0b">${nr}</div>
+      <div style="color:#64748b;font-size:.8rem">NEEDS_REVIEW</div>
+    </div>
