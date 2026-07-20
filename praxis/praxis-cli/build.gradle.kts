@@ -18,6 +18,9 @@ application {
 }
 
 // Run from the project root so documented relative paths (fixtures/...) resolve as written.
+// The CLI exits 1 on a violation by design; don't let Gradle's `run` wrapper report that as
+// "BUILD FAILED". The packaged CLI (installDist/distZip) still returns the real exit codes.
 tasks.named<JavaExec>("run") {
     workingDir = rootProject.projectDir
+    isIgnoreExitValue = true
 }
