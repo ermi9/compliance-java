@@ -1148,3 +1148,211 @@ function renderBatchSummary(results){
       <div style="font-size:1.8rem;font-weight:700;color:#f59e0b">${nr}</div>
       <div style="color:#64748b;font-size:.8rem">NEEDS_REVIEW</div>
     </div>
+    <div class="card" style="flex:1;min-width:130px;text-align:center;padding:1rem">
+      <div style="font-size:1.8rem;font-weight:700;color:#a5b4fc">${results.length}</div>
+      <div style="color:#64748b;font-size:.8rem">TOTAL</div>
+    </div>
+  </div>`;
+}
+
+function renderResultCard(d){
+  const v = d.final?.final_verdict||'—';
+  const sim = d.layer2 ? (d.layer2.similarity_percent < 0 ? 'N/A' : d.layer2.similarity_percent.toFixed(1)+'%') : '—';
+  const l3v = d.layer3 ? (d.layer3.error?'ERR':d.layer3.semantic_verdict) : '—';
+  return `<div class="card" style="cursor:pointer" onclick='openModal(${JSON.stringify(d)})'>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <strong>${d.student}</strong>
+        <span style="color:#64748b;font-size:.8rem;margin-left:.7rem">${d.files_parsed} file(s)</span>
+      </div>
+      <span class="badge ${v}">${v}</span>
+    </div>
+    <div class="info-row" style="margin-top:.7rem">
+      <span>L1 <strong class="${d.layer1.verdict==='PASS'?'l-pass':'l-fail'}">${d.layer1.verdict}</strong></span>
+      <span>L2 <strong>${sim}</strong></span>
+      <span>L3 <strong>${l3v}</strong></span>
+      <span>${d.processing_time_ms}ms</span>
+    </div>
+  </div>`;
+}
+
+async function loadResults(){
+  const r = await fetch('/results');
+  const data = await r.json();
+  const tbody = document.getElementById('resultsBody');
+  if(!data.length){tbody.innerHTML='<tr><td colspan="8" style="color:#64748b;text-align:center;padding:2rem">No submissions yet</td></tr>';return;}
+  tbody.innerHTML = data.map(d=>{
+    const v = d.final?.final_verdict||'—';
+    const l1 = d.layer1?.verdict;
+    const sim = d.layer2 ? d.layer2.similarity_percent : null;
+    const l3v = d.layer3 ? (d.layer3.error?'ERR':(d.layer3.semantic_verdict||'—')) : null;
+    const simColor = (sim===null||sim<0)?'' : sim>=75?'sim-high':sim>=50?'sim-mid':'sim-low';
+    const simHtml = sim===null?'<span class="l-skip">—</span>'
+      : sim<0?'<span class="l-skip">N/A</span>'
+      :`<div class="sim-bar-wrap">
+        <div class="sim-bar ${simColor}" style="width:${sim.toFixed(0)}%"></div>
+        <span class="sim-num">${sim.toFixed(1)}%</span>
+      </div>`;
+    const l3Html = l3v===null?'<span class="l-skip">SKIPPED</span>'
+      :(l3v==='PASS'?'<span class="l-pass">PASS</span>'
+      :(l3v==='FAIL'?'<span class="l-fail">FAIL</span>'
+      :`<span class="l-skip">${l3v}</span>`));
+    return `<tr onclick='openModal(${JSON.stringify(d)})'>
+      <td>${d.id}</td>
+      <td>${d.student}</td>
+      <td>${d.files_parsed}</td>
+      <td class="${l1==='PASS'?'l-pass':'l-fail'}">${l1}</td>
+      <td>${simHtml}</td>
+      <td>${l3Html}</td>
+      <td><span class="badge ${v}">${v}</span></td>
+      <td style="color:#64748b">${d.processing_time_ms}ms</td>
+    </tr>`;
+  }).join('');
+}
+
+function openModal(d){
+  currentDetail = d;
+  document.getElementById('modalContent').innerHTML = renderModal(d);
+  document.getElementById('modal').classList.add('open');
+}
+
+function renderModal(d){
+  const l1 = d.layer1;
+  const l2 = d.layer2;
+  const l3 = d.layer3;
+  const v = d.final?.final_verdict||'—';
+  let html = `<h3>${d.student} — <span class="badge ${v}">${v}</span></h3>
+  <div style="color:#64748b;font-size:.82rem;margin-bottom:1.2rem">${d.final?.reason||''} · ${d.processing_time_ms}ms · ${d.files_parsed} file(s) parsed</div>`;
+
+  // Layer 1
+  html+=`<div class="layer-block"><h4>Layer 1 — Static Analysis <span class="${l1.verdict==='PASS'?'l-pass':'l-fail'}" style="margin-left:.5rem">${l1.verdict}</span></h4>
+  <ul class="check-list">`;
+  for(const c of (l1.passed_checks||[])) html+=`<li class="check-pass">${c}</li>`;
+  for(const c of (l1.failed_checks||[])) html+=`<li class="check-fail">${c}</li>`;
+  for(const c of (l1.warnings||[])) html+=`<li class="check-warn">${c}</li>`;
+  html+=`</ul></div>`;
+
+  // Layer 2
+  if(l2){
+    const simRaw = l2.similarity_percent;
+    const simOk = simRaw >= 0;
+    const sim = simOk ? simRaw.toFixed(1) : null;
+    const barColor = !simOk?'#64748b':simRaw>=75?'#22c55e':simRaw>=50?'#f59e0b':'#ef4444';
+    const rawDist = l2.raw_distance >= 0 ? l2.raw_distance.toFixed(0) : 'N/A';
+    html+=`<div class="layer-block"><h4>Layer 2 — Tree Edit Distance <span class="${l2.verdict==='PASS'?'l-pass':'l-fail'}" style="margin-left:.5rem">${l2.verdict}</span> <span style="color:#64748b;font-size:.75rem">confidence: ${l2.confidence}</span></h4>
+    <div class="info-row">
+      <span>Similarity <strong>${sim!==null?sim+'%':'N/A'}</strong></span>
+      <span>Ref nodes <strong>${l2.ref_node_count}</strong></span>
+      <span>Student nodes <strong>${l2.student_node_count}</strong></span>
+      <span>Raw distance <strong>${rawDist}</strong></span>
+    </div>
+    <div class="big-bar-wrap"><div class="big-bar" style="width:${sim||0}%;background:${barColor}"></div></div>
+    <div style="color:#64748b;font-size:.82rem">${l2.interpretation}</div>
+    </div>`;
+  } else {
+    html+=`<div class="layer-block"><h4>Layer 2 — Tree Edit Distance</h4><div style="color:#64748b">Skipped (Layer 1 failed)</div></div>`;
+  }
+
+  // Layer 3
+  if(l3 && !l3.error){
+    const concepts = l3.oop_concepts||{};
+    html+=`<div class="layer-block"><h4>Layer 3 — Semantic Evaluation <span class="${l3.semantic_verdict==='PASS'?'l-pass':'l-fail'}" style="margin-left:.5rem">${l3.semantic_verdict}</span> <span style="color:#64748b;font-size:.75rem">confidence: ${l3.confidence}</span></h4>
+    <div class="oop-grid">`;
+
+    const conceptEntries = [
+      ['encapsulation', concepts.encapsulation],
+      ['inheritance', concepts.inheritance],
+      ['polymorphism', concepts.polymorphism],
+      ['abstraction', concepts.abstraction],
+      ['subtyping', concepts.subtyping],
+      ['exception_handling', concepts.exception_handling],
+      ['extensibility', concepts.extensibility],
+    ];
+
+    for(const [name, c] of conceptEntries){
+      if(!c) continue;
+      let flags='';
+      if('present' in c) flags+=`<span class="flag ${c.present?'flag-yes':'flag-no'}">${c.present?'present':'absent'}</span>`;
+      if('meaningful' in c) flags+=`<span class="flag ${c.meaningful?'flag-yes':'flag-no'}">${c.meaningful?'meaningful':'shallow'}</span>`;
+      if('overloading' in c){
+        for(const k of ['overloading','overriding','parametric','coercion']){
+          if(k in c) flags+=`<span class="flag ${c[k]?'flag-yes':'flag-no'}">${k}</span>`;
+        }
+      }
+      html+=`<div class="oop-card"><h5>${name.replace('_',' ')}</h5><div class="flags">${flags}</div><div class="comment">${c.comment||''}</div></div>`;
+    }
+
+    html+=`</div>`;
+
+    if(l3.vibe_coding_signals?.length){
+      html+=`<div style="margin-top:1rem"><div style="color:#f59e0b;font-size:.8rem;margin-bottom:.3rem">Vibe Coding Signals</div>
+      <ul class="vibe-list">`;
+      for(const s of l3.vibe_coding_signals) html+=`<li>${s}</li>`;
+      html+=`</ul></div>`;
+    }
+
+    if(l3.complexity_assessment){
+      html+=`<div style="margin-top:.7rem;color:#64748b;font-size:.82rem"><em>${l3.complexity_assessment}</em></div>`;
+    }
+
+    html+=`</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:.5rem">
+      <div class="textbox"><h5>Professor Summary</h5>${l3.professor_summary||'—'}</div>
+      <div class="textbox"><h5>Student Feedback</h5>${l3.student_feedback||'—'}</div>
+    </div>`;
+  } else if(l3?.error){
+    html+=`<div class="layer-block"><h4>Layer 3 — Semantic Evaluation</h4><div class="alert alert-err">Error: ${l3.error}</div></div>`;
+  } else {
+    html+=`<div class="layer-block"><h4>Layer 3 — Semantic Evaluation</h4><div style="color:#64748b">Skipped</div></div>`;
+  }
+
+  if(d.parse_errors?.length){
+    html+=`<div style="margin-top:1rem;font-size:.8rem;color:#f59e0b">Parse errors: ${d.parse_errors.join('; ')}</div>`;
+  }
+
+  return html;
+}
+
+function closeModal(e){
+  if(e.target.id==='modal') closeModalBtn();
+}
+function closeModalBtn(){
+  document.getElementById('modal').classList.remove('open');
+}
+
+async function resetSystem(){
+  if(!confirm('Reset will clear all results and the reference solution. Continue?')) return;
+  await fetch('/reset',{method:'DELETE'});
+  results.length=0;
+  document.getElementById('submitSection').classList.add('hidden');
+  document.getElementById('resultsSection').classList.add('hidden');
+  document.getElementById('setupSection').style.opacity='1';
+  document.getElementById('setupAlert').innerHTML='';
+  document.getElementById('refSummary').classList.add('hidden');
+  document.getElementById('resultsBody').innerHTML='';
+  document.getElementById('singleResult').innerHTML='';
+  document.getElementById('batchSummary').innerHTML='';
+}
+
+// Check reference on load
+(async()=>{
+  const r = await fetch('/reference');
+  const d = await r.json();
+  if(d.status==='reference set'){
+    document.getElementById('submitSection').classList.remove('hidden');
+    document.getElementById('resultsSection').classList.remove('hidden');
+    loadResults();
+  }
+})();
+</script>
+</body>
+</html>"""
+
+
+@app.route("/")
+def index():
+    return render_template_string(HTML)
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
