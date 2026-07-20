@@ -4,7 +4,9 @@ import dev.praxis.core.check.CheckReport;
 import dev.praxis.core.concept.ConceptResult;
 import dev.praxis.core.engine.AnalysisResult;
 import dev.praxis.core.model.Finding;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Renders an {@link AnalysisResult} as deterministic JSON. Hand-written (no JSON dependency) with a
@@ -28,8 +30,12 @@ final class JsonReportWriter {
         appendChecks(sb, result.checkReports());
         sb.append(",\n");
 
-        sb.append("  \"findings\": ");
-        appendFindings(sb, result.findings());
+        // Findings from checks not tied to any listed concept, so nothing is hidden.
+        Set<Finding> covered = new LinkedHashSet<>();
+        result.conceptResults().forEach(c -> covered.addAll(c.evidence()));
+        List<Finding> other = result.findings().stream().filter(f -> !covered.contains(f)).toList();
+        sb.append("  \"otherFindings\": ");
+        appendFindings(sb, other);
         sb.append(",\n");
 
         sb.append("  \"unparsableFiles\": ");
@@ -50,7 +56,10 @@ final class JsonReportWriter {
             ConceptResult c = concepts.get(i);
             sb.append("    { \"id\": ").append(quote(c.conceptId()))
                     .append(", \"state\": ").append(quote(c.state().name()))
-                    .append(", \"explanation\": ").append(quote(c.explanation())).append(" }");
+                    .append(", \"explanation\": ").append(quote(c.explanation()))
+                    .append(", \"findings\": ");
+            appendFindings(sb, c.evidence());
+            sb.append(" }");
             sb.append(i < concepts.size() - 1 ? ",\n" : "\n");
         }
         sb.append("  ]");
