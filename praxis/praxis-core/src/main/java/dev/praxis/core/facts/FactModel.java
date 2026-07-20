@@ -12,6 +12,10 @@ import java.util.List;
 public record FactModel(
         List<TypeFact> types,
         List<CallSiteFact> callSites,
+        List<TypedNewFact> typedNews,
+        int throwStatementCount,
+        int catchClauseCount,
+        int throwsDeclarationCount,
         List<String> unparsableFiles) {
 
     /** All types declared in files that parsed successfully, sorted by qualified name. */
@@ -22,5 +26,10 @@ public record FactModel(
     /** Files that failed to parse; dependent checks over their would-be types yield UNDETERMINED. */
     public List<String> unparsableFiles() {
         return unparsableFiles;
+    }
+
+    /** True when the whole corpus parsed, so "concept provably absent" verdicts are defensible. */
+    public boolean fullyParsed() {
+        return unparsableFiles.isEmpty();
     }
 }

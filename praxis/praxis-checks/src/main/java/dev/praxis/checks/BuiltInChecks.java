@@ -11,7 +11,20 @@ public final class BuiltInChecks {
 
     public static List<Check> all() {
         return List.of(
+                // Encapsulation / information hiding (quality checks: VIOLATION on proven defect)
                 new PublicMutableFieldCheck(),
-                new LeakyGetterCheck());
+                new LeakyGetterCheck(),
+                new AllFieldsPrivateCheck(),
+                // Concept-demonstration checks (SATISFIED on located evidence)
+                new AbstractionCheck(),
+                new InheritanceCheck(),
+                new SubtypingCheck(),
+                new CompositionCheck(),
+                new OverloadingCheck(),
+                new GenericsCheck(),
+                new CoercionCheck(),
+                new InclusionDispatchCheck(),
+                new ExceptionHandlingCheck(),
+                new ExtensibilityCheck());
     }
 }

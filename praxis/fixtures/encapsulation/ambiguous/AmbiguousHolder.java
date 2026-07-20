@@ -1,19 +1,18 @@
+import com.acme.external.Gadget; // external type: not JDK-known and not defined in this project
+
 /**
- * Ambiguous: the getter returns a field of a custom type whose mutability Praxis cannot determine.
- * The leak check must yield UNDETERMINED here, never VIOLATION (invariant 1).
+ * Ambiguous: the getter returns a field of a type Praxis cannot classify — it is neither a known JDK
+ * type nor defined anywhere in the analyzed project, so its mutability is genuinely unknowable here.
+ * The leak check must yield UNDETERMINED, never VIOLATION (invariant 1).
  */
 public class AmbiguousHolder {
-    private final Widget widget = new Widget();
+    private final Gadget gadget;
 
-    public Widget getWidget() {
-        return widget; // Widget mutability is unknown -> cannot prove a leak
+    public AmbiguousHolder(Gadget gadget) {
+        this.gadget = gadget;
     }
-}
 
-class Widget {
-    private int x;
-
-    int value() {
-        return x;
+    public Gadget getGadget() {
+        return gadget; // Gadget mutability is unknowable -> cannot prove a leak
     }
 }

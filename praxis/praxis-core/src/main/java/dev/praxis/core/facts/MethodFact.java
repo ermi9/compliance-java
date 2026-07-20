@@ -13,6 +13,7 @@ public record MethodFact(
         String name,
         String ownerQualifiedName,
         List<String> erasedParamTypeNames,
+        List<String> typeParameters,
         String returnTypeName,
         String returnSimpleTypeName,
         boolean returnIsVoid,
@@ -27,5 +28,15 @@ public record MethodFact(
 
     public int parameterCount() {
         return erasedParamTypeNames.size();
+    }
+
+    /** Declares one or more method-level type parameters (a generic method). */
+    public boolean isGeneric() {
+        return !typeParameters.isEmpty();
+    }
+
+    /** The erased signature used for override/overload matching: {@code name(paramType,...)}. */
+    public String erasedSignature() {
+        return name + "(" + String.join(",", erasedParamTypeNames) + ")";
     }
 }

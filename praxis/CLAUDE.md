@@ -79,14 +79,40 @@ A single atomic check runs over many subjects (fields, methods, types). Its over
 ⇒ `UNDETERMINED`; else `SATISFIED`. A proven violation on one resolved subject is not
 erased by an unknown on another.
 
-## Deferred (do NOT build/stub this session)
+## Implemented checks & concepts
 
-- **Type-flow / dynamic-dispatch analysis** proving inclusion polymorphism is *used*, not
-  merely declared — the flagship check, its own session later. The Layer-1 fact model is
-  built to *hold* call-site / type-flow data (`CallSiteFact`), but no dispatch reasoning yet.
-- The four polymorphism concepts and the information-hiding three-step concept depend on
-  definitions still to be validated with the professor. Do not hard-code their final
-  definitions; leave clearly-marked provisional placeholders or omit them.
+Atomic checks (`praxis-checks`): `field.no-public-mutable`, `method.getter-leaks-internal`
+(project-aware mutability: classifies domain-type getters from the type's own definition),
+`field.all-private`, `type.declares-abstraction`, `type.uses-inheritance`,
+`type.implements-interface`, `type.uses-composition`, `method.overloading`,
+`type.declares-generic`, `poly.coercion-upcast`, `poly.inclusion-dispatch`,
+`exception.custom-and-usage`, `type.extensibility`.
+
+Concepts (`praxis-core` `Concepts`): encapsulation, information_hiding*, inheritance,
+composition, abstraction, subtyping, polymorphism_overloading, polymorphism_parametric,
+polymorphism_coercion, polymorphism_inclusion*, exception_handling, extensibility*.
+`*` = **provisional definition**, pending professor sign-off (see below). The full ruleset is
+`rulesets/oop-course.yml`.
+
+**Two check families, two verdict styles:**
+- *Quality* checks (encapsulation / information hiding): `VIOLATION` on a proven defect with a
+  located line, else `SATISFIED`, else `UNDETERMINED`.
+- *Demonstration* checks (`DemonstrationCheck` base): `SATISFIED` only with a located evidence
+  line; `VIOLATION` only when a concept is *provably absent* across a fully-parsed corpus AND
+  its absence is decidable (declaration-level concepts); otherwise `UNDETERMINED`. Coercion,
+  inclusion, composition and extensibility mark absence non-decidable → never a false VIOLATION.
+
+## Deferred / provisional
+
+- **Full type-flow / dynamic-dispatch analysis** (its own session). `poly.inclusion-dispatch`
+  ships a sound *positive-evidence* approximation (a call to an overridden method through a
+  supertype-typed receiver); it never claims dispatch is *absent*. The complete data-flow proof
+  is still future work. `CallSiteFact` / `TypedNewFact` hold the data it will use.
+- **Provisional definitions** (`*` above) encode a sound, reasonable reading of rubric items
+  whose exact wording still needs the professor. They are pure compositions over atomic checks,
+  so retune them in `Concepts` / the ruleset — never by adding logic elsewhere.
+- Not yet modelled: overrides against *library* supertypes (only project supertypes are matched),
+  coercion via casts/call-arguments, composition via library containers.
 
 ## Module layout
 

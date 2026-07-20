@@ -12,10 +12,13 @@ public record TypeFact(
         String qualifiedName,
         String simpleName,
         Kind kind,
+        boolean isAbstract,
+        List<String> typeParameters,
         List<String> extendedTypeNames,
         List<String> implementedTypeNames,
         List<FieldFact> fields,
         List<MethodFact> methods,
+        List<ConstructorFact> constructors,
         boolean resolved,
         SourceRef source) {
 
@@ -30,5 +33,15 @@ public record TypeFact(
     /** Number of directly declared interfaces this type implements. */
     public int implementedInterfaceCount() {
         return implementedTypeNames.size();
+    }
+
+    /** An interface, or a class explicitly declared {@code abstract}: an abstraction seam. */
+    public boolean isAbstraction() {
+        return kind == Kind.INTERFACE || (kind == Kind.CLASS && isAbstract);
+    }
+
+    /** Declares one or more type parameters (a generic type): parametric-polymorphism evidence. */
+    public boolean isGeneric() {
+        return !typeParameters.isEmpty();
     }
 }

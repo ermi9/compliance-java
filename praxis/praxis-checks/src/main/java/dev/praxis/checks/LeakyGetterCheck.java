@@ -23,6 +23,7 @@ import dev.praxis.core.model.Finding;
 import dev.praxis.core.model.TriState;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -62,6 +63,13 @@ public final class LeakyGetterCheck implements Check {
         List<TriState> subjects = new ArrayList<>();
         List<Finding> findings = new ArrayList<>();
 
+        // Index project types so a getter returning a domain object can be classified from the
+        // domain type's OWN definition rather than punting to UNDETERMINED.
+        Map<String, TypeFact> projectTypes = new HashMap<>();
+        for (TypeFact type : facts.types()) {
+            projectTypes.putIfAbsent(type.simpleName(), type);
+        }
+
         for (TypeFact type : facts.types()) {
             Map<String, FieldFact> instanceFields = new HashMap<>();
             for (FieldFact f : type.fields()) {
@@ -77,7 +85,7 @@ public final class LeakyGetterCheck implements Check {
                 if (returned.isEmpty()) {
                     continue; // not a single-return getter — no claim
                 }
-                Subject subject = classifyReturn(returned.get(), instanceFields);
+                Subject subject = classifyReturn(returned.get(), instanceFields, projectTypes);
                 subjects.add(subject.state());
                 if (subject.state() != TriState.SATISFIED) {
                     findings.add(new Finding(
@@ -114,7 +122,7 @@ public final class LeakyGetterCheck implements Check {
         return ((ReturnStmt) statements.get(0)).getExpression();
     }
 
-    private Subject classifyReturn(Expression expr, Map<String, FieldFact> instanceFields) {
+    private Subject classifyReturn(Expression expr, Map<String, FieldFact> instanceFields, Map<String, TypeFact> projectTypes) {
         Optional<String> fieldName = returnedFieldName(expr);
         if (fieldName.isPresent()) {
             FieldFact field = instanceFields.get(fieldName.get());
@@ -124,6 +132,10 @@ public final class LeakyGetterCheck implements Check {
                 return Subject.undetermined(null, "returned symbol is not a resolvable instance field");
             }
             Mutability mutability = MutabilityHeuristics.classify(field.simpleTypeName(), field.isArray());
+            if (mutability == Mutability.UNKNOWN) {
+                // Fall back to the field type's OWN project definition, if we have it.
+                mutability = classifyProjectType(field.simpleTypeName(), projectTypes, new HashSet<>());
+            }
             return switch (mutability) {
                 case MUTABLE -> Subject.violation(field);
                 case IMMUTABLE -> Subject.satisfied();
@@ -150,6 +162,50 @@ public final class LeakyGetterCheck implements Check {
             }
         }
         return Optional.empty();
+    }
+
+    /** Names of Java primitives, treated as immutable field types. */
+    private static final Set<String> PRIMITIVES = Set.of(
+            "int", "long", "short", "byte", "char", "boolean", "double", "float");
+
+    /**
+     * Classifies a project type's mutability from its own definition: any non-final instance field, or
+     * a final field of a mutable type, makes it MUTABLE; all-final fields of provably-immutable types
+     * make it IMMUTABLE; anything unresolved stays UNKNOWN. The {@code visiting} set guards recursion.
+     */
+    private static Mutability classifyProjectType(String simpleTypeName, Map<String, TypeFact> projectTypes, Set<String> visiting) {
+        TypeFact type = projectTypes.get(simpleTypeName);
+        if (type == null || !visiting.add(simpleTypeName)) {
+            return Mutability.UNKNOWN; // not a project type, or a cycle — do not guess
+        }
+        boolean allImmutable = true;
+        for (FieldFact f : type.fields()) {
+            if (!f.isInstanceField()) {
+                continue;
+            }
+            if (!f.isFinal()) {
+                return Mutability.MUTABLE; // a reassignable field ⇒ the object is mutable
+            }
+            Mutability fieldMutability = classifyFieldType(f, projectTypes, visiting);
+            if (fieldMutability == Mutability.MUTABLE) {
+                return Mutability.MUTABLE; // final ref to a mutable component still leaks
+            }
+            if (fieldMutability == Mutability.UNKNOWN) {
+                allImmutable = false;
+            }
+        }
+        return allImmutable ? Mutability.IMMUTABLE : Mutability.UNKNOWN;
+    }
+
+    private static Mutability classifyFieldType(FieldFact f, Map<String, TypeFact> projectTypes, Set<String> visiting) {
+        if (!f.isArray() && PRIMITIVES.contains(f.simpleTypeName())) {
+            return Mutability.IMMUTABLE;
+        }
+        Mutability jdk = MutabilityHeuristics.classify(f.simpleTypeName(), f.isArray());
+        if (jdk != Mutability.UNKNOWN) {
+            return jdk;
+        }
+        return classifyProjectType(f.simpleTypeName(), projectTypes, visiting);
     }
 
     private static boolean isProvablySafeCopy(Expression expr) {

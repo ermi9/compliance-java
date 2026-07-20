@@ -1,39 +1,46 @@
 # =============================================================================
 # Praxis ruleset — "Full OOP course" rubric
 # =============================================================================
-# A professor drops this next to Praxis and runs it against a student checkout:
-#
 #   praxis check <submission>/src/main/java --rules rulesets/oop-course.yml
 #
-# This file SELECTS and TUNES checks/concepts — it contains no analysis logic
-# (invariant 6). It also doubles as an honest coverage map: only checks that are
-# actually implemented are enabled. Rubric items with no implemented check yet are
-# listed under `planned:` so the gap is explicit and never silently "passes".
+# SELECTS and TUNES concepts/checks; contains no analysis logic (invariant 6).
+#
+# Verdict meaning per concept:
+#   SATISFIED     — demonstrated, with a located line of evidence
+#   VIOLATION     — provably absent across fully-parsed code (decidable concepts only)
+#   UNDETERMINED  — could not be confirmed (parse gaps, or a concept whose absence
+#                   cannot be soundly proven, e.g. coercion / dynamic dispatch)
+#
+# Concepts tagged (provisional) encode a reasonable-but-unratified reading of the
+# rubric wording and should be confirmed with the professor before high-stakes use.
 # =============================================================================
 version: 1
 
-# ---- ENABLED: concepts Praxis can prove today -------------------------------
 concepts:
-  - encapsulation            # no public mutable field AND no leaked mutable internal
+  - encapsulation
+  - information_hiding        # (provisional)
+  - inheritance
+  - composition
+  - abstraction
+  - subtyping                 # subtyping / multityping via interfaces
+  - polymorphism_overloading  # ad-hoc
+  - polymorphism_parametric   # generics
+  - polymorphism_coercion     # upcast
+  - polymorphism_inclusion    # (provisional) dynamic dispatch — full analysis is a later session
+  - exception_handling
+  - extensibility             # (provisional)
 
-# ---- ENABLED: atomic checks -------------------------------------------------
 checks:
   - id: field.no-public-mutable
   - id: method.getter-leaks-internal
-
-# ---- NOT YET IMPLEMENTED (do not treat absence as a pass) -------------------
-# These map the course rubric to Praxis status. A concept listed here is NOT
-# evaluated; a submission is never graded on it until a real check ships.
-#
-# planned:
-#   information_hiding     : three-step definition — pending professor sign-off
-#   inheritance            : override walks full ancestor chain (erased params)   [needs override facts]
-#   composition            : has-a via fields of project types                     [buildable now]
-#   abstraction            : abstract class / interface declared AND depended on   [buildable now]
-#   subtyping_multityping  : type implements >= 2 interfaces (or Comparable+own)   [buildable now]
-#   polymorphism_inclusion : dynamic dispatch actually exercised (FLAGSHIP)        [deferred: type-flow analysis]
-#   polymorphism_overload  : >= 2 methods same name, different erased params       [buildable now]
-#   polymorphism_parametric: generic type/method declared AND used                 [buildable now]
-#   polymorphism_coercion  : widening/upcast used meaningfully                      [needs type-flow]
-#   exception_handling     : custom exception hierarchy + throws + catch usage     [buildable now]
-#   extensibility          : open-for-extension seams (strategy/interface points)  [needs definition]
+  - id: field.all-private
+  - id: type.declares-abstraction
+  - id: type.uses-inheritance
+  - id: type.implements-interface
+  - id: type.uses-composition
+  - id: method.overloading
+  - id: type.declares-generic
+  - id: poly.coercion-upcast
+  - id: poly.inclusion-dispatch
+  - id: exception.custom-and-usage
+  - id: type.extensibility
