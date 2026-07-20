@@ -49,7 +49,8 @@ final class JsonReportWriter {
         for (int i = 0; i < concepts.size(); i++) {
             ConceptResult c = concepts.get(i);
             sb.append("    { \"id\": ").append(quote(c.conceptId()))
-                    .append(", \"state\": ").append(quote(c.state().name())).append(" }");
+                    .append(", \"state\": ").append(quote(c.state().name()))
+                    .append(", \"explanation\": ").append(quote(c.explanation())).append(" }");
             sb.append(i < concepts.size() - 1 ? ",\n" : "\n");
         }
         sb.append("  ]");

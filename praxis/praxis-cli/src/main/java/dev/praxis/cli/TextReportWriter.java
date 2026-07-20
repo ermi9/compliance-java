@@ -24,7 +24,8 @@ final class TextReportWriter {
             sb.append("  (none evaluated)\n");
         } else {
             for (ConceptResult c : result.conceptResults()) {
-                sb.append("  ").append(c.conceptId()).append(": ").append(c.state()).append('\n');
+                sb.append("  ").append(c.conceptId()).append(": ").append(c.state())
+                        .append(" — ").append(c.explanation()).append('\n');
             }
         }
 

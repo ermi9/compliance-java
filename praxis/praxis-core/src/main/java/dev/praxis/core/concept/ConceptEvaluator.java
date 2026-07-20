@@ -37,6 +37,25 @@ public final class ConceptEvaluator {
                 evidence.addAll(report.findings());
             }
         }
-        return new ConceptResult(concept.id(), verdict, evidence);
+        return new ConceptResult(concept.id(), verdict, explain(verdict, evidence.size()), evidence);
+    }
+
+    /**
+     * A one-line, professor-readable reason for the verdict — crucially explaining a VIOLATION or
+     * UNDETERMINED that carries no finding line (a concept that is provably or possibly absent has
+     * nothing to point at, which is otherwise confusing).
+     */
+    private static String explain(TriState verdict, int evidenceCount) {
+        return switch (verdict) {
+            case SATISFIED -> evidenceCount > 0
+                    ? "demonstrated (" + evidenceCount + " located witness" + (evidenceCount == 1 ? "" : "es") + ")"
+                    : "satisfied — no issues found";
+            case VIOLATION -> evidenceCount > 0
+                    ? "see the " + evidenceCount + " finding" + (evidenceCount == 1 ? "" : "s") + " below"
+                    : "not demonstrated — no evidence of this concept anywhere in the parsed code";
+            case UNDETERMINED -> evidenceCount > 0
+                    ? "unresolved — see the finding(s) below"
+                    : "could not be confirmed — no evidence found, and its absence is not provable";
+        };
     }
 }
