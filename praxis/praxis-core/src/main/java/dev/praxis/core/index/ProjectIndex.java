@@ -13,7 +13,11 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.RecordDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.AssignExpr;
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.ThisExpr;
+import com.github.javaparser.ast.expr.UnaryExpr;
 import com.github.javaparser.ast.stmt.CatchClause;
 import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.stmt.ThrowStmt;
@@ -199,10 +203,13 @@ public final class ProjectIndex {
             rd.getTypeParameters().forEach(t -> typeParams.add(t.getNameAsString()));
         }
 
+        java.util.Set<String> reassignable = analyzeReassignments(td);
+        boolean assignmentsFullyVisible = td.isTopLevelType();
         List<FieldFact> fields = new ArrayList<>();
         for (FieldDeclaration fd : td.getFields()) {
             for (VariableDeclarator var : fd.getVariables()) {
-                fields.add(toFieldFact(fd, var, qualified, file, lines));
+                fields.add(toFieldFact(fd, var, qualified, file, lines,
+                        reassignable.contains(var.getNameAsString()), assignmentsFullyVisible));
             }
         }
 
@@ -246,7 +253,8 @@ public final class ProjectIndex {
         return TypeFact.Kind.CLASS;
     }
 
-    private static FieldFact toFieldFact(FieldDeclaration fd, VariableDeclarator var, String owner, String file, List<String> lines) {
+    private static FieldFact toFieldFact(FieldDeclaration fd, VariableDeclarator var, String owner, String file,
+            List<String> lines, boolean reassignable, boolean assignmentsFullyVisible) {
         boolean isPrivate = fd.isPrivate();
         boolean isProtected = fd.isProtected();
         boolean isPublic = fd.isPublic();
@@ -262,9 +270,58 @@ public final class ProjectIndex {
                 fd.isStatic(),
                 fd.isFinal(),
                 type.isArrayType(),
+                reassignable,
+                assignmentsFullyVisible,
                 type.asString(),
                 simpleTypeName(type),
                 SourceRef.of(file, fd, lines));
+    }
+
+    /**
+     * Names of fields that are reassigned or mutated in place after construction: assigned via a plain
+     * {@code =} outside a constructor, or the target of a compound assignment ({@code +=}) or {@code ++}/
+     * {@code --} anywhere. A private field NOT in this set could and should be declared {@code final}
+     * (the constancy step of information hiding). Conservative: over-marking as reassignable only
+     * suppresses a should-be-final finding, never invents one.
+     */
+    private static java.util.Set<String> analyzeReassignments(TypeDeclaration<?> td) {
+        java.util.Set<String> reassignable = new java.util.HashSet<>();
+        for (AssignExpr ae : td.findAll(AssignExpr.class)) {
+            String target = fieldTargetName(ae.getTarget());
+            if (target == null) {
+                continue;
+            }
+            boolean compound = ae.getOperator() != AssignExpr.Operator.ASSIGN;
+            boolean inConstructorOnly = ae.findAncestor(ConstructorDeclaration.class).isPresent()
+                    && ae.findAncestor(MethodDeclaration.class).isEmpty();
+            if (compound || !inConstructorOnly) {
+                reassignable.add(target);
+            }
+        }
+        for (UnaryExpr ue : td.findAll(UnaryExpr.class)) {
+            if (isMutatingUnary(ue.getOperator())) {
+                String target = fieldTargetName(ue.getExpression());
+                if (target != null) {
+                    reassignable.add(target);
+                }
+            }
+        }
+        return reassignable;
+    }
+
+    private static String fieldTargetName(Expression e) {
+        if (e.isNameExpr()) {
+            return e.asNameExpr().getNameAsString();
+        }
+        if (e.isFieldAccessExpr() && e.asFieldAccessExpr().getScope() instanceof ThisExpr) {
+            return e.asFieldAccessExpr().getNameAsString();
+        }
+        return null;
+    }
+
+    private static boolean isMutatingUnary(UnaryExpr.Operator op) {
+        return op == UnaryExpr.Operator.PREFIX_INCREMENT || op == UnaryExpr.Operator.POSTFIX_INCREMENT
+                || op == UnaryExpr.Operator.PREFIX_DECREMENT || op == UnaryExpr.Operator.POSTFIX_DECREMENT;
     }
 
     private static MethodFact toMethodFact(MethodDeclaration md, String owner, String file, List<String> lines) {

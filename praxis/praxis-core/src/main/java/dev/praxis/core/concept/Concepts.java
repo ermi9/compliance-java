@@ -28,11 +28,19 @@ public final class Concepts {
                     BoolExpr.check(CheckIds.NO_PUBLIC_MUTABLE_FIELD),
                     BoolExpr.check(CheckIds.NO_LEAKED_MUTABLE_INTERNAL)));
 
-    /** Information hiding (provisional) = all instance fields private AND no leaked mutable internal. */
+    /**
+     * Information hiding — the course's three-step per-field discipline:
+     * <b>constancy</b> (never-reassigned ⇒ {@code final}) AND
+     * <b>visibility</b> (instance fields {@code private}) AND
+     * <b>mutability</b> (a mutable field is not leaked by reference).
+     * Distinct from {@link #ENCAPSULATION}: it adds the constancy step and the private-visibility
+     * requirement, not just non-leakage.
+     */
     public static final Concept INFORMATION_HIDING = new Concept(
             "information_hiding",
-            "Information hiding (provisional) = all instance fields private AND no leaked internal state",
+            "Information hiding = per-field constancy (final) AND visibility (private) AND mutability (no leak)",
             BoolExpr.and(
+                    BoolExpr.check(CheckIds.FIELD_CONSTANCY),
                     BoolExpr.check(CheckIds.ALL_FIELDS_PRIVATE),
                     BoolExpr.check(CheckIds.NO_LEAKED_MUTABLE_INTERNAL)));
 

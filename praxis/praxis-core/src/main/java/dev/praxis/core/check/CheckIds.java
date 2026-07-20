@@ -15,8 +15,11 @@ public final class CheckIds {
     /** A getter returns a mutable internal reference directly instead of a defensive copy. */
     public static final String NO_LEAKED_MUTABLE_INTERNAL = "method.getter-leaks-internal";
 
-    /** Information hiding (provisional): every instance field is {@code private}. */
+    /** Information hiding — visibility step: every instance field is {@code private}. */
     public static final String ALL_FIELDS_PRIVATE = "field.all-private";
+
+    /** Information hiding — constancy step: a never-reassigned field is declared {@code final}. */
+    public static final String FIELD_CONSTANCY = "field.constancy";
 
     /** Abstraction: an interface or abstract class is declared. */
     public static final String DECLARES_ABSTRACTION = "type.declares-abstraction";

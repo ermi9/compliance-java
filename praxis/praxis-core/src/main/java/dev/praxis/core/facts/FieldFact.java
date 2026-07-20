@@ -16,6 +16,8 @@ public record FieldFact(
         boolean isStatic,
         boolean isFinal,
         boolean isArray,
+        boolean reassignable,
+        boolean assignmentsFullyVisible,
         String declaredTypeName,
         String simpleTypeName,
         SourceRef source) {
@@ -23,5 +25,23 @@ public record FieldFact(
     /** True for a field that belongs to instances (not a static/class field). */
     public boolean isInstanceField() {
         return !isStatic;
+    }
+
+    /**
+     * True when the field is ever reassigned or mutated in place after construction (assigned in a
+     * method, or the target of a compound/unary operator anywhere). Used by the constancy step of
+     * information hiding: a field that is NOT reassignable could and should be declared {@code final}.
+     */
+    public boolean isReassignable() {
+        return reassignable;
+    }
+
+    /**
+     * True when Praxis can see every assignment to this field (its declaring type is top-level, so a
+     * {@code private} field's assignments are wholly contained). When false, constancy is left
+     * UNDETERMINED rather than guessed.
+     */
+    public boolean assignmentsFullyVisible() {
+        return assignmentsFullyVisible;
     }
 }

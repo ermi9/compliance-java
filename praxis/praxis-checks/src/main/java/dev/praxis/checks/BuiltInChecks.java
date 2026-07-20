@@ -15,6 +15,7 @@ public final class BuiltInChecks {
                 new PublicMutableFieldCheck(),
                 new LeakyGetterCheck(),
                 new AllFieldsPrivateCheck(),
+                new FieldConstancyCheck(),
                 // Concept-demonstration checks (SATISFIED on located evidence)
                 new AbstractionCheck(),
                 new InheritanceCheck(),

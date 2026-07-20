@@ -83,12 +83,18 @@ erased by an unknown on another.
 
 Atomic checks (`praxis-checks`): `field.no-public-mutable`, `method.getter-leaks-internal`
 (project-aware mutability: classifies domain-type getters from the type's own definition),
-`field.all-private`, `type.declares-abstraction`, `type.uses-inheritance`,
+`field.all-private`, `field.constancy` (a never-reassigned field must be `final`),
+`type.declares-abstraction`, `type.uses-inheritance`,
 `type.implements-interface`, `type.uses-composition`, `method.overloading`,
 `type.declares-generic`, `poly.coercion-upcast`, `poly.inclusion-dispatch`,
 `exception.custom-and-usage`, `type.extensibility`.
 
-Concepts (`praxis-core` `Concepts`): encapsulation, information_hiding*, inheritance,
+**Information hiding is the course's three-step per-field discipline** — constancy
+(`field.constancy`: never-reassigned ⇒ `final`) ∧ visibility (`field.all-private`) ∧
+mutability (`method.getter-leaks-internal`). It is *distinct* from encapsulation (which is
+about not exposing/leaking mutable state); the constancy step is the part unique to it.
+
+Concepts (`praxis-core` `Concepts`): encapsulation, information_hiding, inheritance,
 composition, abstraction, subtyping, polymorphism_overloading, polymorphism_parametric,
 polymorphism_coercion, polymorphism_inclusion*, exception_handling, extensibility*.
 `*` = **provisional definition**, pending professor sign-off (see below). The full ruleset is

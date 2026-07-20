@@ -34,6 +34,7 @@ checks:
   - id: field.no-public-mutable
   - id: method.getter-leaks-internal
   - id: field.all-private
+  - id: field.constancy
   - id: type.declares-abstraction
   - id: type.uses-inheritance
   - id: type.implements-interface
