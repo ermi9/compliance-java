@@ -1,0 +1,12 @@
+# Sample professor ruleset. Selects and tunes checks/concepts; contains no logic (invariant 6).
+version: 1
+
+# Layer-3 concepts to evaluate.
+concepts:
+  - encapsulation
+
+# Layer-2 atomic checks to run. Checks referenced by an enabled concept run regardless, but
+# listing them here is explicit and lets you attach options.
+checks:
+  - id: field.no-public-mutable
+  - id: method.getter-leaks-internal

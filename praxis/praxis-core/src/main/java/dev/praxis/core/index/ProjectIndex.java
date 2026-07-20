@@ -95,8 +95,9 @@ public final class ProjectIndex {
                 continue;
             }
             CompilationUnit cu = result.getResult().get();
-            extractTypes(cu, display, types);
-            extractCallSites(cu, display, callSites);
+            List<String> lines = readLines(file);
+            extractTypes(cu, display, lines, types);
+            extractCallSites(cu, display, lines, callSites);
         }
 
         types.sort(Comparator.comparing(TypeFact::qualifiedName));
@@ -121,6 +122,14 @@ public final class ProjectIndex {
         return new JavaParser(config);
     }
 
+    private static List<String> readLines(Path file) {
+        try {
+            return Files.readAllLines(file, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return List.of(); // snippet falls back to empty; line/column are still recorded
+        }
+    }
+
     private static List<Path> javaFiles(Path root) throws IOException {
         if (Files.isRegularFile(root)) {
             return root.toString().endsWith(".java") ? List.of(root) : List.of();
@@ -143,13 +152,13 @@ public final class ProjectIndex {
         }
     }
 
-    private static void extractTypes(CompilationUnit cu, String file, List<TypeFact> out) {
+    private static void extractTypes(CompilationUnit cu, String file, List<String> lines, List<TypeFact> out) {
         for (TypeDeclaration<?> td : cu.findAll(TypeDeclaration.class)) {
-            out.add(toTypeFact(td, file));
+            out.add(toTypeFact(td, file, lines));
         }
     }
 
-    private static TypeFact toTypeFact(TypeDeclaration<?> td, String file) {
+    private static TypeFact toTypeFact(TypeDeclaration<?> td, String file, List<String> lines) {
         String qualified = td.getFullyQualifiedName().orElse(td.getNameAsString());
         TypeFact.Kind kind = kindOf(td);
 
@@ -167,13 +176,13 @@ public final class ProjectIndex {
         List<FieldFact> fields = new ArrayList<>();
         for (FieldDeclaration fd : td.getFields()) {
             for (VariableDeclarator var : fd.getVariables()) {
-                fields.add(toFieldFact(fd, var, qualified, file));
+                fields.add(toFieldFact(fd, var, qualified, file, lines));
             }
         }
 
         List<MethodFact> methods = new ArrayList<>();
         for (MethodDeclaration md : td.getMethods()) {
-            methods.add(toMethodFact(md, qualified, file));
+            methods.add(toMethodFact(md, qualified, file, lines));
         }
 
         boolean resolved = tryResolve(td);
@@ -187,7 +196,7 @@ public final class ProjectIndex {
                 List.copyOf(fields),
                 List.copyOf(methods),
                 resolved,
-                SourceRef.of(file, td.getName()));
+                SourceRef.of(file, td.getName(), lines));
     }
 
     private static TypeFact.Kind kindOf(TypeDeclaration<?> td) {
@@ -200,7 +209,7 @@ public final class ProjectIndex {
         return TypeFact.Kind.CLASS;
     }
 
-    private static FieldFact toFieldFact(FieldDeclaration fd, VariableDeclarator var, String owner, String file) {
+    private static FieldFact toFieldFact(FieldDeclaration fd, VariableDeclarator var, String owner, String file, List<String> lines) {
         boolean isPrivate = fd.isPrivate();
         boolean isProtected = fd.isProtected();
         boolean isPublic = fd.isPublic();
@@ -218,10 +227,10 @@ public final class ProjectIndex {
                 type.isArrayType(),
                 type.asString(),
                 simpleTypeName(type),
-                SourceRef.of(file, fd));
+                SourceRef.of(file, fd, lines));
     }
 
-    private static MethodFact toMethodFact(MethodDeclaration md, String owner, String file) {
+    private static MethodFact toMethodFact(MethodDeclaration md, String owner, String file, List<String> lines) {
         List<String> params = new ArrayList<>();
         md.getParameters().forEach(p -> params.add(simpleTypeName(p.getType())));
         Type ret = md.getType();
@@ -238,7 +247,7 @@ public final class ProjectIndex {
                 md.isPrivate(),
                 md.isPublic(),
                 md.isAbstract(),
-                SourceRef.of(file, md.getName()),
+                SourceRef.of(file, md.getName(), lines),
                 md);
     }
 
@@ -247,7 +256,7 @@ public final class ProjectIndex {
      * data to work with; no dispatch reasoning happens here. Receiver type resolution is guarded —
      * any symbol-solver failure yields a {@code null} receiver type rather than aborting the run.
      */
-    private static void extractCallSites(CompilationUnit cu, String file, List<CallSiteFact> out) {
+    private static void extractCallSites(CompilationUnit cu, String file, List<String> lines, List<CallSiteFact> out) {
         for (MethodCallExpr call : cu.findAll(MethodCallExpr.class)) {
             String receiverType = null;
             if (call.getScope().isPresent()) {
@@ -257,7 +266,7 @@ public final class ProjectIndex {
                     receiverType = null; // unresolved receiver — recorded as unknown, never guessed
                 }
             }
-            out.add(new CallSiteFact(call.getNameAsString(), receiverType, enclosingTypeName(call), SourceRef.of(file, call)));
+            out.add(new CallSiteFact(call.getNameAsString(), receiverType, enclosingTypeName(call), SourceRef.of(file, call, lines)));
         }
     }
 

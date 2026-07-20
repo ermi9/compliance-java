@@ -16,3 +16,8 @@ application {
     mainClass.set("dev.praxis.cli.PraxisCli")
     applicationName = "praxis"
 }
+
+// Run from the project root so documented relative paths (fixtures/...) resolve as written.
+tasks.named<JavaExec>("run") {
+    workingDir = rootProject.projectDir
+}
