@@ -1,0 +1,39 @@
+# =============================================================================
+# Praxis ruleset — "Full OOP course" rubric
+# =============================================================================
+# A professor drops this next to Praxis and runs it against a student checkout:
+#
+#   praxis check <submission>/src/main/java --rules rulesets/oop-course.yml
+#
+# This file SELECTS and TUNES checks/concepts — it contains no analysis logic
+# (invariant 6). It also doubles as an honest coverage map: only checks that are
+# actually implemented are enabled. Rubric items with no implemented check yet are
+# listed under `planned:` so the gap is explicit and never silently "passes".
+# =============================================================================
+version: 1
+
+# ---- ENABLED: concepts Praxis can prove today -------------------------------
+concepts:
+  - encapsulation            # no public mutable field AND no leaked mutable internal
+
+# ---- ENABLED: atomic checks -------------------------------------------------
+checks:
+  - id: field.no-public-mutable
+  - id: method.getter-leaks-internal
+
+# ---- NOT YET IMPLEMENTED (do not treat absence as a pass) -------------------
+# These map the course rubric to Praxis status. A concept listed here is NOT
+# evaluated; a submission is never graded on it until a real check ships.
+#
+# planned:
+#   information_hiding     : three-step definition — pending professor sign-off
+#   inheritance            : override walks full ancestor chain (erased params)   [needs override facts]
+#   composition            : has-a via fields of project types                     [buildable now]
+#   abstraction            : abstract class / interface declared AND depended on   [buildable now]
+#   subtyping_multityping  : type implements >= 2 interfaces (or Comparable+own)   [buildable now]
+#   polymorphism_inclusion : dynamic dispatch actually exercised (FLAGSHIP)        [deferred: type-flow analysis]
+#   polymorphism_overload  : >= 2 methods same name, different erased params       [buildable now]
+#   polymorphism_parametric: generic type/method declared AND used                 [buildable now]
+#   polymorphism_coercion  : widening/upcast used meaningfully                      [needs type-flow]
+#   exception_handling     : custom exception hierarchy + throws + catch usage     [buildable now]
+#   extensibility          : open-for-extension seams (strategy/interface points)  [needs definition]
