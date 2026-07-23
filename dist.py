@@ -28,3 +28,29 @@ def make_animal(name):
 def make_dog(name):
     return make_animal(name) + " barks"
 """
+
+borderline = """
+class Animal:
+    def __init__(self, name):
+        self.name = name
+
+class Dog(Animal):
+    pass
+"""
+
+reference = ast.parse(compliant)
+student_good = ast.parse(compliant)
+student_bad = ast.parse(non_compliant)
+student_borderline = ast.parse(borderline)
+
+ref_tree = ast_to_zss(reference)
+
+d1 = simple_distance(ref_tree, ast_to_zss(student_good))
+d2 = simple_distance(ref_tree, ast_to_zss(student_bad))
+d3 = simple_distance(ref_tree, ast_to_zss(student_borderline))
+
+print(f"Compliant student distance:    {d1}")
+print(f"Non-compliant student distance: {d2}")
+print(f"Borderline student distance:    {d3}")
+print()
+print(f"Threshold suggestion: {(d1 + d2) / 2:.1f}")
