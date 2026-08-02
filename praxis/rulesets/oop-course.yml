@@ -1,0 +1,47 @@
+# =============================================================================
+# Praxis ruleset — "Full OOP course" rubric
+# =============================================================================
+#   praxis check <submission>/src/main/java --rules rulesets/oop-course.yml
+#
+# SELECTS and TUNES concepts/checks; contains no analysis logic (invariant 6).
+#
+# Verdict meaning per concept:
+#   SATISFIED     — demonstrated, with a located line of evidence
+#   VIOLATION     — provably absent across fully-parsed code (decidable concepts only)
+#   UNDETERMINED  — could not be confirmed (parse gaps, or a concept whose absence
+#                   cannot be soundly proven, e.g. coercion / dynamic dispatch)
+#
+# Concepts tagged (provisional) encode a reasonable-but-unratified reading of the
+# rubric wording and should be confirmed with the professor before high-stakes use.
+# =============================================================================
+version: 1
+
+concepts:
+  - encapsulation
+  - information_hiding        # (provisional)
+  - inheritance
+  - composition
+  - abstraction
+  - subtyping                 # subtyping / multityping via interfaces
+  - polymorphism_overloading  # ad-hoc
+  - polymorphism_parametric   # generics
+  - polymorphism_coercion     # upcast
+  - polymorphism_inclusion    # (provisional) dynamic dispatch — full analysis is a later session
+  - exception_handling
+  - extensibility             # (provisional)
+
+checks:
+  - id: field.no-public-mutable
+  - id: method.getter-leaks-internal
+  - id: field.all-private
+  - id: field.constancy
+  - id: type.declares-abstraction
+  - id: type.uses-inheritance
+  - id: type.implements-interface
+  - id: type.uses-composition
+  - id: method.overloading
+  - id: type.declares-generic
+  - id: poly.coercion-upcast
+  - id: poly.inclusion-dispatch
+  - id: exception.custom-and-usage
+  - id: type.extensibility

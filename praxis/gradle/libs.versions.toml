@@ -1,0 +1,15 @@
+[versions]
+javaparser = "3.26.4"
+picocli = "4.7.6"
+snakeyaml = "2.3"
+junit = "5.11.3"
+assertj = "3.26.3"
+
+[libraries]
+javaparser-symbol-solver = { module = "com.github.javaparser:javaparser-symbol-solver-core", version.ref = "javaparser" }
+picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
+snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
