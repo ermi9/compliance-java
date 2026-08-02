@@ -1,6 +1,5 @@
 # OOP Compliance Screener — POC
 
-Proof of concept for Professor Salvatore Distefano's OOP course at University of Messina.
 
 A pre-screening tool for student Java submissions: it checks whether the required OOP
 concepts are present and flags AI-favored banned syntax before a professor grades by hand.
